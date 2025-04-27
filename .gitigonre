@@ -1,0 +1,23 @@
+# Compiled binary
+/server
+task-manager # Если бинарник называется так
+
+# Log files
+*.log
+
+# Environment file
+.env
+
+# IDE/editor specific files
+.idea/
+.vscode/
+*.iml
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Swagger generated files (optional, if you want to regenerate them always)
+# docs/docs.go
+# docs/swagger.json
+# docs/swagger.yaml
