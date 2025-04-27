@@ -1,0 +1,185 @@
+basePath: /api/v1
+definitions:
+  models.Task:
+    properties:
+      description:
+        description: |-
+          Описание задачи (опционально)
+          example: Нежирное, 1 литр
+        type: string
+      id:
+        description: |-
+          Уникальный идентификатор задачи
+          example: 1
+        type: integer
+      status:
+        description: |-
+          Статус задачи (например, "pending", "completed")
+          example: pending
+        type: string
+      title:
+        description: |-
+          Название задачи
+          required: true
+          example: Купить молоко
+        type: string
+    required:
+    - title
+    type: object
+  models.TaskCreatePayload:
+    properties:
+      description:
+        description: |-
+          Описание задачи (опционально)
+          example: Сразу после ужина
+        type: string
+      title:
+        description: |-
+          Название задачи
+          required: true
+          example: Помыть посуду
+        type: string
+    required:
+    - title
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: Этот сервис предоставляет API для управления задачами.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Task Manager API
+  version: "1.0"
+paths:
+  /tasks:
+    get:
+      description: Возвращает все задачи, хранящиеся в системе
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Список задач
+          schema:
+            items:
+              $ref: '#/definitions/models.Task'
+            type: array
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Получить список всех задач
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      description: Добавляет новую задачу в список
+      parameters:
+      - description: Данные для создания задачи
+        in: body
+        name: task
+        required: true
+        schema:
+          $ref: '#/definitions/models.TaskCreatePayload'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Задача успешно создана
+          schema:
+            $ref: '#/definitions/models.Task'
+        "400":
+          description: Неверный формат запроса
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Создать новую задачу
+      tags:
+      - tasks
+  /tasks/{taskID}:
+    delete:
+      description: Удаляет задачу с указанным идентификатором
+      parameters:
+      - description: ID задачи для удаления
+        in: path
+        name: taskID
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: Задача успешно удалена
+        "400":
+          description: Неверный ID задачи
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Задача не найдена для удаления
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Удалить задачу по ID
+      tags:
+      - tasks
+    get:
+      description: Возвращает детали конкретной задачи по её идентификатору
+      parameters:
+      - description: ID задачи
+        in: path
+        name: taskID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Найденная задача
+          schema:
+            $ref: '#/definitions/models.Task'
+        "400":
+          description: Неверный ID задачи
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Задача не найдена
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Получить задачу по ID
+      tags:
+      - tasks
+schemes:
+- http
+- https
+swagger: "2.0"

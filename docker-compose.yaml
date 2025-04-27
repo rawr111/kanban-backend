@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # Сервис PostgreSQL
+  db:
+    image: postgres:15-alpine # Используем Alpine-версию для меньшего размера
+    container_name: taskmanager-db
+    environment:
+      POSTGRES_USER: user          # Имя пользователя БД
+      POSTGRES_PASSWORD: password    # Пароль пользователя БД
+      POSTGRES_DB: taskdb         # Имя базы данных
+    ports:
+      - "5432:5432"             # Пробрасываем порт для возможного доступа извне контейнера
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Сохраняем данные БД между перезапусками
+    healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U user -d taskdb"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+        start_period: 10s
+    restart: unless-stopped
+
+  # Наш Go-сервис
+  app:
+    container_name: taskmanager-app
+    build: .                     # Собираем образ из Dockerfile в текущей директории
+    ports:
+      - "8080:8080"             # Пробрасываем порт приложения
+    environment:
+      PORT: ":8080"             # Устанавливаем порт для приложения внутри контейнера
+      DATABASE_DSN: "postgresql://user:password@db:5432/taskdb?sslmode=disable" # DSN для подключения к БД
+                                 # Используем имя сервиса 'db' как хост
+    depends_on:
+      db:
+        condition: service_healthy # Запускаем app только после того, как db станет 'healthy'
+    restart: unless-stopped
+
+volumes:
+  postgres_data:                # Определяем именованный том для данных PostgreSQL
