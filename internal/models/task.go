@@ -19,6 +19,10 @@ type Task struct {
 	// Статус задачи (например, "pending", "completed")
 	// example: pending
 	Status string `json:"status,omitempty"` // Пока не используется в логике, но добавим для полноты
+
+	// ID пользователя-владельца задачи
+	// example: 42
+	UserID int `json:"user_id"`
 }
 
 // CreateTaskRequest описывает тело запроса для создания задачи.

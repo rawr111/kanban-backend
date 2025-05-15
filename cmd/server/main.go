@@ -14,43 +14,22 @@ import (
 	"kanban-backend/internal/config"
 	"kanban-backend/internal/handler"
 	"kanban-backend/internal/storage/postgres"
+	"kanban-backend/internal/auth"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	httpSwagger "github.com/swaggo/http-swagger" // http-swagger middleware
-	// Не забудьте godotenv, если используете .env файл
-	// "github.com/joho/godotenv"
+	"github.com/go-chi/cors" // <--- ДОБАВЬ ЭТОТ ИМПОРТ
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
-// @title Task Manager API
-// @version 1.0
-// @description Этот сервис предоставляет API для управления задачами.
-// @termsOfService http://swagger.io/terms/
+// ... (остальные твои комментарии Swagger)
 
-// @contact.name API Support
-// @contact.url http://www.swagger.io/support
-// @contact.email support@swagger.io
-
-// @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
-
-// @host localhost:8080
-// @BasePath /api/v1
-// @schemes http https
 func main() {
-	// (Опционально) Загрузка .env файла, если он есть
-	// err := godotenv.Load()
-	// if err != nil && !os.IsNotExist(err) {
-	//     log.Printf("Warning: could not load .env file: %v", err)
-	// }
-
-	// 1. Загрузка конфигурации
 	cfg := config.Load()
 	log.Printf("Конфигурация загружена: Port=%s, DB DSN (скрыто)", cfg.ServerPort)
 
-	// 2. Инициализация хранилища (PostgreSQL)
 	dbStore := postgres.NewTaskStore()
-	ctx, cancelDbConnect := context.WithTimeout(context.Background(), 15*time.Second) // Таймаут на подключение
+	ctx, cancelDbConnect := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelDbConnect()
 
 	if err := dbStore.Connect(ctx, cfg.DatabaseDSN); err != nil {
@@ -62,48 +41,64 @@ func main() {
 		}
 	}()
 
-	// 3. Выполнение миграций (просто и неидемпотентно, но для примера сойдет)
-	// В реальном проекте лучше использовать инструменты миграций (migrate, goose и т.д.)
 	migrateCtx, cancelMigrate := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelMigrate()
 	if err := dbStore.Migrate(migrateCtx); err != nil {
 		log.Fatalf("Не удалось выполнить миграцию базы данных: %v", err)
 	}
 
-	// 4. Инициализация обработчиков
+	// --- UserStore и AuthHandler ---
+	userStore := postgres.NewUserStore(dbStore.DB()) // Получаем *sql.DB из TaskStore
+	if err := userStore.Migrate(migrateCtx); err != nil {
+		log.Fatalf("Не удалось выполнить миграцию users: %v", err)
+	}
+	authHandler := handler.NewAuthHandler(userStore)
+
 	taskHandler := handler.NewTaskHandler(dbStore)
 
-	// 5. Настройка роутера Chi
 	r := chi.NewRouter()
 
-	// Middleware
-	r.Use(middleware.RequestID)                 // Добавляет ID к каждому запросу
-	r.Use(middleware.RealIP)                    // Получает реальный IP клиента
-	r.Use(middleware.Logger)                    // Логгирует HTTP-запросы
-	r.Use(middleware.Recoverer)                 // Восстанавливается после паник
-	r.Use(middleware.Timeout(60 * time.Second)) // Устанавливает таймаут на запрос
+	// --- НАСТРОЙКА CORS ---
+	// Это должно быть одним из первых middleware
+	corsMiddleware := cors.New(cors.Options{
+		// AllowedOrigins: []string{"*"}, // Разрешить все источники (менее безопасно для продакшена)
+		AllowedOrigins:   []string{"http://localhost:3000"}, // Конкретно твой фронтенд
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300, // Максимальное время кеширования preflight запроса в секундах
+	})
+	r.Use(corsMiddleware.Handler) // <--- ПРИМЕНИТЬ CORS MIDDLEWARE
+
+	// Остальные Middleware
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(60 * time.Second))
 
 	// Маршруты API v1
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Get("/tasks", taskHandler.GetTasks)               // GET /api/v1/tasks
-		r.Post("/tasks", taskHandler.CreateTask)            // POST /api/v1/tasks
-		r.Get("/tasks/{taskID}", taskHandler.GetTask)       // GET /api/v1/tasks/123
-		r.Delete("/tasks/{taskID}", taskHandler.DeleteTask) // DELETE /api/v1/tasks/123
-		// Можно добавить PUT /api/v1/tasks/{taskID} для обновления
+		// Auth middleware только для задач
+		r.Group(func(r chi.Router) {
+			r.Use(auth.JWTAuthMiddleware)
+			r.Get("/tasks", taskHandler.GetTasks)
+			r.Post("/tasks", taskHandler.CreateTask)
+			r.Get("/tasks/{taskID}", taskHandler.GetTask)
+			r.Delete("/tasks/{taskID}", taskHandler.DeleteTask)
+		})
+		// --- Auth routes ---
+		r.Post("/register", authHandler.Register)
+		r.Post("/login", authHandler.Login)
 	})
 
-	// Маршрут для Swagger UI
-	// URL будет /swagger/index.html
 	r.Get("/swagger/*", httpSwagger.Handler(
-		// Используем относительный URL. Браузер сам правильно сформирует полный путь.
 		httpSwagger.URL("/swagger/doc.json"),
 	))
-	// Можно также обновить лог для ясности:
-	log.Printf("Swagger UI доступен по адресу: http://localhost%s/swagger/index.html (или используйте ваш актуальный хост/IP)", cfg.ServerPort)
-	// Если порт не localhost:8080, замените его или используйте относительный путь /swagger/doc.json
 	log.Printf("Swagger UI доступен по адресу: http://localhost%s/swagger/index.html", cfg.ServerPort)
 
-	// 6. Настройка и запуск HTTP сервера
+
 	server := &http.Server{
 		Addr:         cfg.ServerPort,
 		Handler:      r,
@@ -112,23 +107,19 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	// Канал для сигналов завершения
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	// Запуск сервера в горутине
 	go func() {
-		log.Printf("Запуск сервера на порту %s...", cfg.ServerPort)
+		log.Printf("Запуск сервера на портА %s...", cfg.ServerPort)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Ошибка запуска сервера: %v", err)
 		}
 	}()
 
-	// Ожидание сигнала завершения
 	<-done
 	log.Println("Получен сигнал завершения. Начинаем graceful shutdown...")
 
-	// Graceful shutdown с таймаутом
 	ctxShutdown, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelShutdown()
 

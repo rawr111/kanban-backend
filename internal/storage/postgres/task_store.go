@@ -90,16 +90,13 @@ func (s *TaskStore) Migrate(ctx context.Context) error {
 
 // CreateTask добавляет новую задачу в базу данных.
 func (s *TaskStore) CreateTask(ctx context.Context, task *models.Task) (int, error) {
-	query := `INSERT INTO tasks (title, description, status) VALUES ($1, $2, $3) RETURNING id`
-	// Устанавливаем статус по умолчанию, если не указан
+	query := `INSERT INTO tasks (title, description, status, user_id) VALUES ($1, $2, $3, $4) RETURNING id`
 	if task.Status == "" {
 		task.Status = "pending"
 	}
-
 	createCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
-	err := s.db.QueryRowContext(createCtx, query, task.Title, task.Description, task.Status).Scan(&task.ID)
+	err := s.db.QueryRowContext(createCtx, query, task.Title, task.Description, task.Status, task.UserID).Scan(&task.ID)
 	if err != nil {
 		return 0, fmt.Errorf("ошибка при создании задачи: %w", err)
 	}
@@ -107,79 +104,69 @@ func (s *TaskStore) CreateTask(ctx context.Context, task *models.Task) (int, err
 	return task.ID, nil
 }
 
-// GetTaskByID получает задачу по ее ID.
-func (s *TaskStore) GetTaskByID(ctx context.Context, id int) (*models.Task, error) {
-	query := `SELECT id, title, description, status FROM tasks WHERE id = $1`
+// GetTaskByID получает задачу по ее ID и user_id.
+func (s *TaskStore) GetTaskByID(ctx context.Context, id int, userID int) (*models.Task, error) {
+	query := `SELECT id, title, description, status, user_id FROM tasks WHERE id = $1 AND user_id = $2`
 	task := &models.Task{}
-
 	getCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
-	row := s.db.QueryRowContext(getCtx, query, id)
-	err := row.Scan(&task.ID, &task.Title, &task.Description, &task.Status)
+	row := s.db.QueryRowContext(getCtx, query, id, userID)
+	err := row.Scan(&task.ID, &task.Title, &task.Description, &task.Status, &task.UserID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("задача с ID %d не найдена: %w", id, err) // Используем как маркер "не найдено"
+			return nil, fmt.Errorf("задача с ID %d не найдена: %w", id, err)
 		}
 		return nil, fmt.Errorf("ошибка при получении задачи %d: %w", id, err)
 	}
 	return task, nil
 }
 
-// GetAllTasks получает все задачи из базы данных.
-func (s *TaskStore) GetAllTasks(ctx context.Context) ([]models.Task, error) {
-	query := `SELECT id, title, description, status FROM tasks ORDER BY created_at DESC`
+// GetAllTasks получает все задачи пользователя из базы данных.
+func (s *TaskStore) GetAllTasks(ctx context.Context, userID int) ([]models.Task, error) {
+	query := `SELECT id, title, description, status, user_id FROM tasks WHERE user_id = $1 ORDER BY created_at DESC`
 	tasks := []models.Task{}
-
-	getCtx, cancel := context.WithTimeout(ctx, 10*time.Second) // Даем больше времени на выборку списка
+	getCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-
-	rows, err := s.db.QueryContext(getCtx, query)
+	rows, err := s.db.QueryContext(getCtx, query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при получении списка задач: %w", err)
 	}
 	defer rows.Close()
-
 	for rows.Next() {
 		var task models.Task
-		err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Status)
+		err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Status, &task.UserID)
 		if err != nil {
-			// Логгируем ошибку сканирования, но продолжаем, если возможно
 			log.Printf("Ошибка сканирования строки задачи: %v", err)
-			continue // или return nil, fmt.Errorf(...) если критично
+			continue
 		}
 		tasks = append(tasks, task)
 	}
-
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("ошибка при итерации по результатам задач: %w", err)
 	}
-
 	return tasks, nil
 }
 
-// DeleteTask удаляет задачу по ее ID.
-func (s *TaskStore) DeleteTask(ctx context.Context, id int) error {
-	query := `DELETE FROM tasks WHERE id = $1`
-
+// DeleteTask удаляет задачу по ее ID и user_id.
+func (s *TaskStore) DeleteTask(ctx context.Context, id int, userID int) error {
+	query := `DELETE FROM tasks WHERE id = $1 AND user_id = $2`
 	deleteCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
-	result, err := s.db.ExecContext(deleteCtx, query, id)
+	result, err := s.db.ExecContext(deleteCtx, query, id, userID)
 	if err != nil {
 		return fmt.Errorf("ошибка при удалении задачи %d: %w", id, err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		// Не критично, но полезно для отладки
 		log.Printf("Не удалось получить количество удаленных строк для задачи %d: %v", id, err)
 	}
-
 	if rowsAffected == 0 {
-		return fmt.Errorf("задача с ID %d не найдена для удаления", id) // Возвращаем ошибку, если ничего не удалено
+		return fmt.Errorf("задача с ID %d не найдена для удаления", id)
 	}
-
 	log.Printf("Задача с ID %d удалена", id)
 	return nil
+}
+
+func (s *TaskStore) DB() *sql.DB {
+	return s.db
 }

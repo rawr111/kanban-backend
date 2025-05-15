@@ -42,6 +42,43 @@ definitions:
     required:
     - title
     type: object
+  models.UserRegisterPayload:
+    type: object
+    required:
+      - username
+      - password
+    properties:
+      username:
+        type: string
+        description: Имя пользователя
+      password:
+        type: string
+        description: Пароль
+  models.UserLoginPayload:
+    type: object
+    required:
+      - username
+      - password
+    properties:
+      username:
+        type: string
+        description: Имя пользователя
+      password:
+        type: string
+        description: Пароль
+  models.User:
+    type: object
+    properties:
+      id:
+        type: integer
+        description: Уникальный идентификатор пользователя
+      username:
+        type: string
+        description: Имя пользователя
+      created_at:
+        type: string
+        format: date-time
+        description: Дата создания
 host: localhost:8080
 info:
   contact:
@@ -179,6 +216,68 @@ paths:
       summary: Получить задачу по ID
       tags:
       - tasks
+  /register:
+    post:
+      tags:
+        - auth
+      summary: Регистрация нового пользователя
+      description: Регистрирует нового пользователя по username и password
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: user
+          required: true
+          schema:
+            $ref: '#/definitions/models.UserRegisterPayload'
+      responses:
+        201:
+          description: Пользователь успешно зарегистрирован
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+        400:
+          description: Ошибка валидации или пользователь уже существует
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+  /login:
+    post:
+      tags:
+        - auth
+      summary: Аутентификация пользователя
+      description: Возвращает JWT-токен при успешном логине
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: credentials
+          required: true
+          schema:
+            $ref: '#/definitions/models.UserLoginPayload'
+      responses:
+        200:
+          description: Успешная аутентификация
+          schema:
+            type: object
+            properties:
+              token:
+                type: string
+        401:
+          description: Неверные имя пользователя или пароль
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
 schemes:
 - http
 - https

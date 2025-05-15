@@ -48,6 +48,15 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	}
 }
 
+// GetUserIDFromContext извлекает userID из контекста запроса.
+func GetUserIDFromContext(r *http.Request) (int, error) {
+	userID, ok := r.Context().Value("user_id").(int)
+	if !ok || userID == 0 {
+		return 0, errors.New("user_id not found in context")
+	}
+	return userID, nil
+}
+
 // --- Обработчики ---
 
 // CreateTask godoc
@@ -62,33 +71,34 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 // @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
 // @Router /tasks [post]
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
+	userID, err := GetUserIDFromContext(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
 	var payload models.TaskCreatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Неверный формат JSON: "+err.Error())
 		return
 	}
 	defer r.Body.Close()
-
-	// Простая валидация
 	if strings.TrimSpace(payload.Title) == "" {
 		respondWithError(w, http.StatusBadRequest, "Название задачи не может быть пустым")
 		return
 	}
-
 	task := models.Task{
 		Title:       payload.Title,
 		Description: payload.Description,
-		Status:      "pending", // Статус по умолчанию
+		Status:      "pending",
+		UserID:      userID,
 	}
-
 	id, err := h.Store.CreateTask(r.Context(), &task)
 	if err != nil {
 		log.Printf("Ошибка при создании задачи в хранилище: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Не удалось создать задачу")
 		return
 	}
-
-	task.ID = id // Устанавливаем ID, возвращенный из БД
+	task.ID = id
 	log.Printf("Задача успешно создана: ID=%d, Title=%s", task.ID, task.Title)
 	respondWithJSON(w, http.StatusCreated, task)
 }
@@ -102,18 +112,20 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
 // @Router /tasks [get]
 func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
-	tasks, err := h.Store.GetAllTasks(r.Context())
+	userID, err := GetUserIDFromContext(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	tasks, err := h.Store.GetAllTasks(r.Context(), userID)
 	if err != nil {
 		log.Printf("Ошибка при получении списка задач: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Не удалось получить список задач")
 		return
 	}
-
-	// Если задач нет, возвращаем пустой массив, а не null
 	if tasks == nil {
 		tasks = []models.Task{}
 	}
-
 	respondWithJSON(w, http.StatusOK, tasks)
 }
 
@@ -129,16 +141,19 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
 // @Router /tasks/{taskID} [get]
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
+	userID, err := GetUserIDFromContext(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
 	idStr := chi.URLParam(r, "taskID")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Неверный формат ID задачи")
 		return
 	}
-
-	task, err := h.Store.GetTaskByID(r.Context(), id)
+	task, err := h.Store.GetTaskByID(r.Context(), id, userID)
 	if err != nil {
-		// Проверяем, была ли ошибка "не найдено"
 		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "не найдена") {
 			log.Printf("Задача с ID %d не найдена", id)
 			respondWithError(w, http.StatusNotFound, "Задача не найдена")
@@ -148,7 +163,6 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
 	respondWithJSON(w, http.StatusOK, task)
 }
 
@@ -163,16 +177,19 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} map[string]string "Внутренняя ошибка сервера"
 // @Router /tasks/{taskID} [delete]
 func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
+	userID, err := GetUserIDFromContext(r)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
 	idStr := chi.URLParam(r, "taskID")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Неверный формат ID задачи")
 		return
 	}
-
-	err = h.Store.DeleteTask(r.Context(), id)
+	err = h.Store.DeleteTask(r.Context(), id, userID)
 	if err != nil {
-		// Проверяем специфичную ошибку "не найдено" из нашего хранилища
 		if strings.Contains(err.Error(), "не найдена для удаления") {
 			log.Printf("Попытка удаления несуществующей задачи с ID %d", id)
 			respondWithError(w, http.StatusNotFound, "Задача не найдена для удаления")
@@ -182,7 +199,6 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
 	log.Printf("Задача с ID %d успешно удалена", id)
-	w.WriteHeader(http.StatusNoContent) // Успешное удаление - 204 No Content
+	w.WriteHeader(http.StatusNoContent)
 }

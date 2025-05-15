@@ -1,0 +1,3 @@
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS user_id INTEGER;
+ALTER TABLE tasks ADD CONSTRAINT fk_tasks_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id); 

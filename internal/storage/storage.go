@@ -11,7 +11,7 @@ type TaskStore interface {
 	Connect(ctx context.Context, dsn string) error
 	Close() error
 	CreateTask(ctx context.Context, task *models.Task) (int, error)
-	GetTaskByID(ctx context.Context, id int) (*models.Task, error)
-	GetAllTasks(ctx context.Context) ([]models.Task, error)
-	DeleteTask(ctx context.Context, id int) error
+	GetTaskByID(ctx context.Context, id int, userID int) (*models.Task, error)
+	GetAllTasks(ctx context.Context, userID int) ([]models.Task, error)
+	DeleteTask(ctx context.Context, id int, userID int) error
 }

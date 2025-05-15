@@ -10,9 +10,11 @@
     # Копируем исходный код
     COPY . .
     
-    # Устанавливаем swag CLI для генерации документации внутри контейнера (опционально, если не генерировать локально)
-    # RUN go install github.com/swaggo/swag/cmd/swag@latest
-    # RUN swag init -g cmd/server/main.go --output ./docs
+    # Устанавливаем swag CLI для генерации документации внутри контейнера
+    RUN go install github.com/swaggo/swag/cmd/swag@latest
+    ENV PATH=$PATH:/go/bin
+    
+    RUN swag init -g cmd/server/main.go --output ./docs
     
     # Собираем приложение
     # CGO_ENABLED=0 отключает Cgo, что делает бинарник статически скомпонованным (лучше для Alpine)
