@@ -62,7 +62,7 @@ func main() {
 	// Это должно быть одним из первых middleware
 	corsMiddleware := cors.New(cors.Options{
 		// AllowedOrigins: []string{"*"}, // Разрешить все источники (менее безопасно для продакшена)
-		AllowedOrigins:   []string{"http://95.163.237.78:4001"}, // Конкретно твой фронтенд
+		AllowedOrigins:   []string{"http://95.163.237.78:777"}, // Конкретно твой фронтенд
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
